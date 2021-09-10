@@ -69,14 +69,13 @@ fn main() {
             let mut match_length: u8 = 1; 
             let mut longest_match_length: u8 = 1;
             
-            #[allow(unused_must_use)]
             let mut match_found = false;
             let mut end_of_window = false;
 
             let file_in_size = metadata(Path::new(&args[2])).unwrap().len();
 
             'outer_c: loop {
-                // Find up to 32 matches 
+                // Find up to 512 matches 
                 let mut num_matches: usize = 0;
                 for i in (0..window.len()).rev() {  
                     if window[i] != 0 {
