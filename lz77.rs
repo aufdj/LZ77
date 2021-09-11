@@ -98,7 +98,8 @@ fn main() {
                             if match_offsets[i] + (match_length as u16) >= (WINDOW_SIZE - 1) as u16 {
                                 end_of_window = true;
                             }
-                            if file_in.buffer()[j] == window[(match_offsets[i] as usize) + (match_length as usize)] && match_length < 31 {
+                            if file_in.buffer()[j] == window[(match_offsets[i] as usize) 
+                                + (match_length as usize)] && match_length < 31 {
                                 match_length += 1;    
                             } else {
                                 break;
