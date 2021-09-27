@@ -74,7 +74,7 @@ fn main() {
 
             let file_in_size = metadata(Path::new(&args[2])).unwrap().len();
 
-            'outer_c: loop {
+            'compression: loop {
                 // Find up to 512 matches 
                 let mut num_matches: usize = 0;
                 for i in (0..window.len()).rev() {  
@@ -90,7 +90,6 @@ fn main() {
                         }
                     }        
                 }
-    
                 // Find the length for each match and pick the longest one
                 for i in 0..match_offsets.len() {
                     if match_offsets[i] != 0 && match_offsets[i] != (WINDOW_SIZE - 1) as u16 {
@@ -98,8 +97,8 @@ fn main() {
                             if match_offsets[i] + (match_length as u16) >= (WINDOW_SIZE - 1) as u16 {
                                 end_of_window = true;
                             }
-                            if file_in.buffer()[j] == window[(match_offsets[i] as usize) 
-                                + (match_length as usize)] && match_length < 31 {
+                            if file_in.buffer()[j] == window[(match_offsets[i] as usize) + (match_length as usize)] 
+                            && match_length < 31 {
                                 match_length += 1;    
                             } else {
                                 break;
@@ -117,34 +116,31 @@ fn main() {
                 }
                 match_length = longest_match_length;
 
-                if match_offset == 0 || match_offset == (WINDOW_SIZE - 1) as u16 {
-                    match_found == false;
-                    match_length = 1;
+                match match_offset {
+                    0..=7 => { 
+                        match_found = false; 
+                        match_length = 1;
+                    },
+                    2047 => { 
+                        match_found = false; 
+                        match_length = 1;
+                    },
+                    _ => { match_found = true; },
                 }
-
                 // Write byte literal or pointer and slide coding_position/window forward
                 if match_found == false {
+                    write(&mut file_out, 0);
                     write(&mut file_out, file_in.buffer()[coding_position]);
                     if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
-                        break 'outer_c; 
+                        break 'compression; 
                     }
                 } else {
-                    if match_length > 3 {
-                        let pointer = (match_offset & 0x7FF) + (((match_length & 31) as u16) << 11);
-                        write(&mut file_out, MATCH_CODE); 
-                        write(&mut file_out, (pointer & 0x00FF) as u8); 
-                        write(&mut file_out, (pointer >> 8) as u8);     
-                        if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
-                            break 'outer_c; 
-                        }
-                    } else {
-                        for i in 0..match_length {
-                            write(&mut file_out, file_in.buffer()[coding_position + (i as usize)]);
-                        }
-                        if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
-                            break 'outer_c; 
-                        }
-                    }
+                    let pointer = ((match_offset & 0x7FF) << 5) + ((match_length & 31) as u16);
+                    write(&mut file_out, (pointer >> 8) as u8);
+                    write(&mut file_out, (pointer & 0x00FF) as u8);      
+                    if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
+                        break 'compression; 
+                    }   
                 }
 
                 match_length = 1;                   // reset variables
@@ -170,16 +166,21 @@ fn main() {
 
             let file_in_size = metadata(Path::new(&args[2])).unwrap().len();
 
-            'outer_d: loop {
-                // If the current byte is the match code, read the pointer, output bytes, and slide forward
-                if file_in.buffer()[coding_position] == MATCH_CODE {
-                    if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { break 'outer_d; }
-                    let mut pointer = file_in.buffer()[coding_position] as u16;
-                    if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { break 'outer_d; }
-                    pointer += (file_in.buffer()[coding_position] as u16) * 256;
+            'decompression: loop {
+                let mut pointer = (file_in.buffer()[coding_position] as u16) * 256;
+                if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { 
+                    break 'decompression; 
+                }
+                pointer += file_in.buffer()[coding_position] as u16;
 
-                    let match_offset = pointer & 0x7FF;
-                    match_length = ((pointer >> 11) & 31) as u8;
+                if (pointer >> 8) == 0 {
+                    write(&mut file_out, (pointer & 0x00FF) as u8);
+                    if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
+                        break 'decompression; 
+                    }
+                } else {
+                    let match_offset = (pointer >> 5) & 0x7FF;
+                    match_length = (pointer & 31) as u8;
 
                     for i in 0..match_length {
                         write(&mut file_out, window[(match_offset + i as u16) as usize]);
@@ -191,13 +192,11 @@ fn main() {
                         window[WINDOW_SIZE - 1] = bytes_to_write[i as usize];
                     }
 
-                    if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { break 'outer_d; }
-                } else {
-                    write(&mut file_out, file_in.buffer()[coding_position]);
-                    if slide(&mut coding_position, match_length, &mut file_in, &mut window) == 1 { 
-                        break 'outer_d; 
+                    if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { 
+                        break 'decompression; 
                     }
                 }
+
                 match_length = 1;                   // reset variables
                 for i in 0..bytes_to_write.len() {  //
                     bytes_to_write[i] = 0;          //
