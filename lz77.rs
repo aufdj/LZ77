@@ -16,7 +16,6 @@ fn write(buf_out: &mut BufWriter<File>, output: u8) {
 
 const BUFFER_SIZE: usize = 4096;
 const WINDOW_SIZE: usize = 2048;
-const MATCH_CODE: u8 = 1;
 const MAX_MATCHES: usize = 512;
 
 fn slide(coding_position: &mut usize, match_length: u8, file_in: &mut BufReader<File>, window: &mut [u8; WINDOW_SIZE]) -> usize {
