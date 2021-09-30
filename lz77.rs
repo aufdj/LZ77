@@ -161,7 +161,7 @@ fn main() {
             let mut window = [0u8; WINDOW_SIZE];
             let mut coding_position: usize = 0;  
             let mut match_length: u8 = 1; 
-            let mut bytes_to_write = [0u8; 32];
+            let mut window_bytes = [0u8; 32];
 
             let file_in_size = metadata(Path::new(&args[2])).unwrap().len();
 
@@ -183,12 +183,12 @@ fn main() {
 
                     for i in 0..match_length {
                         write(&mut file_out, window[(match_offset + i as u16) as usize]);
-                        bytes_to_write[i as usize] = window[(match_offset + i as u16) as usize];
+                        window_bytes[i as usize] = window[(match_offset + i as u16) as usize];
                     }
 
                     for i in 0..match_length {
                         window.rotate_left(1);
-                        window[WINDOW_SIZE - 1] = bytes_to_write[i as usize];
+                        window[WINDOW_SIZE - 1] = window_bytes[i as usize];
                     }
 
                     if inc_coding_pos(&mut coding_position, &mut file_in) == 1 { 
@@ -197,8 +197,8 @@ fn main() {
                 }
 
                 match_length = 1;                   // reset variables
-                for i in 0..bytes_to_write.len() {  //
-                    bytes_to_write[i] = 0;          //
+                for i in 0..window_bytes.len() {    //
+                    window_bytes[i] = 0;            //
                 }                                   //
             }
             file_out.flush().unwrap();
