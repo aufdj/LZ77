@@ -10,3 +10,16 @@ To Decompress: <br>
 lz77.exe d input output<br>
 <br>
 [Benchmarks](https://sheet.zoho.com/sheet/open/1pcxk88776ef2c512445c948bee21dcbbdba5?sheet=Sheet1&range=A1)
+
+# LZ77v2
+
+LZ77v2 is functionally the same as LZ77, but new bytes are added to the sliding window with modulo rather than the rotate_left and rotate_right standard library functions, 
+which take linear time. As a result, LZ77v2 is in most cases multiple times faster. Various other improvements have been made as well.<br> 
+<br>
+To Compress:<br>
+lz77v2.exe c input output<br>
+To Decompress: <br>
+lz77v2.exe d input output<br>
+<br>
+[Benchmarks](https://sheet.zoho.com/sheet/open/1pcxk88776ef2c512445c948bee21dcbbdba5?sheet=Sheet1&range=A1)
+
