@@ -100,7 +100,7 @@ const MAX_MATCHES: usize = 512;
 struct Lz77 {
     window:     [u8; WINDOW_SIZE],
     code_pos:   usize,
-    p:          usize,
+    p:          usize,              // Total bytes added to buffer
     file_in:    BufReader<File>,
     file_out:   BufWriter<File>,   
 }
