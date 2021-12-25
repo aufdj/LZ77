@@ -15,7 +15,7 @@ lz77.exe d input output<br>
 
 # LZ77v2
 
-LZ77v2 is functionally the same as LZ77, but new bytes are added to the sliding window with modulo rather than the rotate_left and rotate_right standard library functions, 
+LZ77v2 is functionally the same as LZ77, but new bytes are added to the sliding window with the remainder operator rather than the rotate_left and rotate_right standard library functions, 
 which take linear time. As a result, LZ77v2 is in most cases multiple times faster. Various other improvements have been made as well.<br> 
 <br>
 To Compress:<br>
