@@ -1,6 +1,6 @@
 use std::{
     fs::{File, metadata},
-    io::{Read, Write, BufReader, BufWriter, BufRead},
+    io::{Write, BufReader, BufWriter, BufRead},
     time::Instant,
     path::Path,
     env,
@@ -14,29 +14,9 @@ enum BufferState {
 }
 
 trait BufferedRead {
-    fn read_byte(&mut self, input: &mut [u8; 1]);
     fn fill_buffer(&mut self) -> BufferState;
 }
 impl BufferedRead for BufReader<File> {
-    fn read_byte(&mut self, input: &mut [u8; 1]) {
-        match self.read(input) {
-            Ok(_)  => {},
-            Err(e) => { 
-                println!("Function read_byte failed."); 
-                println!("Error: {}", e);
-            },
-        };
-        if self.buffer().len() <= 0 { 
-            self.consume(self.capacity()); 
-            match self.fill_buf() {
-                Ok(_)  => {},
-                Err(e) => {
-                    println!("Function read_byte failed.");
-                    println!("Error: {}", e);
-                },
-            }
-        }
-    }
     fn fill_buffer(&mut self) -> BufferState {
         self.consume(self.capacity());
         match self.fill_buf() {
