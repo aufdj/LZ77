@@ -86,42 +86,45 @@ impl BufferedWrite for BufWriter<File> {
     }
 }
 fn new_input_file(capacity: usize, file_name: &str) -> BufReader<File> {
-    BufReader::with_capacity(capacity, File::open(file_name).unwrap())
+    BufReader::with_capacity(
+        capacity, File::open(file_name).unwrap()
+    )
 }
 fn new_output_file(capacity: usize, file_name: &str) -> BufWriter<File> {
-    BufWriter::with_capacity(capacity, File::create(file_name).unwrap())
+    BufWriter::with_capacity(
+        capacity, File::create(file_name).unwrap()
+    )
 }
 // ----------------------------------------------------------------------------------------------------------------------------------------
 
-const BUFFER_SIZE: usize = 4096;
-const WINDOW_SIZE: usize = 2048;
-const MAX_MATCHES: usize = 512;
+const WIN_SIZE: usize = 2048; // Window Size
+const MAX_MCHS: usize = 512; // Maximum number of matches
 
 struct Lz77 {
-    window:     [u8; WINDOW_SIZE],
-    code_pos:   usize,
-    p:          usize,              // Total bytes added to buffer
-    file_in:    BufReader<File>,
-    file_out:   BufWriter<File>,   
+    win:       [u8; WIN_SIZE],
+    code_pos:  usize,
+    p:         usize,
+    file_in:   BufReader<File>,
+    file_out:  BufWriter<File>,   
 }
 impl Lz77 {
     fn new(file_in: BufReader<File>, file_out: BufWriter<File>) -> Lz77 {
         Lz77 {
-            window: [0; WINDOW_SIZE],
+            win: [0; WIN_SIZE],
             code_pos: 0,
             p: 0,
             file_in, file_out,
         }
     }
-    fn slide(&mut self, match_len: u16) -> usize {
-        // Slide window forward match_len bytes
-        for i in 0..match_len {
-            self.window[self.p % WINDOW_SIZE] = self.file_in.buffer()[self.code_pos + (i as usize)];
+    fn slide(&mut self, mch_len: u16) -> usize {
+        // Slide win forward mch_len bytes
+        for i in 0..mch_len {
+            self.win[self.p % WIN_SIZE] = self.file_in.buffer()[self.code_pos + (i as usize)];
             self.p += 1;
         }
 
-        // Move code_pos forward match_len bytes and check for end of buffer
-        self.code_pos += match_len as usize; 
+        // Move code_pos forward mch_len bytes and check for end of buffer
+        self.code_pos += mch_len as usize; 
         if self.code_pos >= self.file_in.buffer().len() {
             self.code_pos = 0;
             if self.file_in.fill_buffer() == BufferState::Empty { 
@@ -141,120 +144,119 @@ impl Lz77 {
         0
     }
     fn compress(&mut self) {
-        let mut match_offsets = [0u16; MAX_MATCHES];
-        let mut match_offset: u16 = 0; 
-        let mut match_len: u16 = 1; 
-        let mut longest_match_len: u16 = 1;
-        let mut match_found = false;
+        let mut mch_offs = [0u16; MAX_MCHS]; // Offsets of matches
+        let mut mch_off: u16 = 0; // Offset with longest length
+        let mut mch_len: u16 = 1; // Length of mch_off
+        let mut longest_mch_len: u16 = 1; // Temp current longest length
+        let mut mch_found = false; // 
 
         loop {
-            // Find up to MAX_MATCHES matches 
+            // Find up to MAX_MCHS matches 
             let mut num_matches: usize = 0;
-            for i in (0..self.window.len()).rev() {  
-                if self.window[i] != 0 {
-                    if self.file_in.buffer()[self.code_pos] == self.window[i] { 
-                        match_offsets[num_matches] = i as u16;
+            for i in (0..self.win.len()).rev() {  
+                if self.win[i] != 0 {
+                    if self.file_in.buffer()[self.code_pos] == self.win[i] { 
+                        mch_offs[num_matches] = i as u16;
                         num_matches += 1;
-                        if num_matches >= MAX_MATCHES - 1 { break; }
-                        match_found = true;
+                        if num_matches >= MAX_MCHS - 1 { break; }
+                        mch_found = true;
                     }
                 }        
             }
             
             // Find the length for each match and pick the longest one
-            for offset in match_offsets.iter() 
-            .filter(|&x| 
-               *x != 0 
-            && *x != (WINDOW_SIZE - 1) as u16) {
-                for j in (self.code_pos + 1)..(self.file_in.buffer().len()) { 
-                    if self.file_in.buffer()[j] == self.window[((*offset + match_len) as usize) % WINDOW_SIZE] 
-                    && match_len < 31 {
-                        match_len += 1;    
-                    } else { 
-                        break; 
-                    }  
+            for off in mch_offs.iter()
+            .filter(|&&x| x != 0 && x != (WIN_SIZE - 1) as u16) {
+                // Increase match length if byte at next code pos 'c' 
+                // equals next byte in window 'w'
+                for c in self.file_in.buffer().iter().skip(self.code_pos+1) {
+                    let w = self.win[((*off + mch_len) as usize) % WIN_SIZE];
+                    if *c == w && mch_len < 31 { mch_len += 1; } 
+                    else { break; }  
                 }
-                if match_len > longest_match_len {
-                    longest_match_len = match_len;
-                    match_offset = *offset;
+            
+                if mch_len > longest_mch_len {
+                    longest_mch_len = mch_len;
+                    mch_off = *off;
                 }
-                match_len = 1;        
+                mch_len = 1;        
             }
 
-            match_len = longest_match_len;
+            mch_len = longest_mch_len;
 
-            match match_offset {
+            match mch_off {
                 0..=7 => { 
-                    match_found = false; 
-                    match_len = 1;
+                    mch_found = false; 
+                    mch_len = 1;
                 },
                 2047 => { 
-                    match_found = false; 
-                    match_len = 1;
+                    mch_found = false; 
+                    mch_len = 1;
                 },
                 _ => {},
             }
 
-            // Write byte literal or pointer and slide code_pos/window forward
-            if match_found == false {
+            // Write byte literal or ptr and slide code_pos/win forward
+            if mch_found == false {
                 self.file_out.write_byte(0);
                 self.file_out.write_byte(self.file_in.buffer()[self.code_pos]);
-                if self.slide(match_len) == 1 { break; }
-            } else {
-                let pointer = ((match_offset & 0x7FF) << 5) + (match_len & 31);
-                self.file_out.write_byte((pointer >> 8) as u8);
-                self.file_out.write_byte((pointer & 0x00FF) as u8);      
-                if self.slide(match_len) == 1 { break; }   
+                if self.slide(mch_len) == 1 { break; }
+            } 
+            else {
+                let ptr = ((mch_off & 0x7FF) << 5) + (mch_len & 31);
+                self.file_out.write_byte((ptr >> 8) as u8);
+                self.file_out.write_byte((ptr & 0x00FF) as u8);      
+                if self.slide(mch_len) == 1 { break; }   
             }
 
-            match_len = 1;                      // Reset variables
-            longest_match_len = 1;              //
-            match_offset = 0;                   //
-            match_found = false;                //
-            for i in 0..match_offsets.len() {   //
-                match_offsets[i] = 0;           //
-            }                                   //
+            mch_len = 1;                  // Reset variables
+            longest_mch_len = 1;          //
+            mch_off = 0;                  //
+            mch_found = false;            //
+            for i in 0..mch_offs.len() {  //
+                mch_offs[i] = 0;          //
+            }                             //
         } 
         self.file_out.flush_buffer();
     }
     fn decompress(&mut self) {  
-        let mut match_len: u16 = 1; 
-        let mut window_bytes = [0u8; 32];
+        let mut mch_len: u16 = 1; 
+        let mut win_bytes = [0u8; 32];
 
         loop {
             // Read next two bytes
-            let mut pointer = (self.file_in.buffer()[self.code_pos] as u16) * 256;
+            let mut ptr = (self.file_in.buffer()[self.code_pos] as u16) * 256;
             if self.inc_code_pos() == 1 { break; }
-            pointer += self.file_in.buffer()[self.code_pos] as u16;
+            ptr += self.file_in.buffer()[self.code_pos] as u16;
 
-            // Byte Literal
-            if (pointer >> 8) == 0 {
-                self.file_out.write_byte((pointer & 0x00FF) as u8);
-                if self.slide(match_len) == 1 { break; }
-            // Offset-length pair
-            } else {
-                let match_offset = (pointer >> 5) & 0x7FF;
-                match_len = pointer & 31;
+            
+            if (ptr >> 8) == 0 { // Byte Literal
+                self.file_out.write_byte((ptr & 0x00FF) as u8);
+                if self.slide(mch_len) == 1 { break; }
+            } 
+            else { // Offset-length pair
+                let mch_off = (ptr >> 5) & 0x7FF;
+                mch_len = ptr & 31;
 
                 // Write match to file_out and save bytes to be added to window
-                for i in 0..match_len {
-                    let byte = self.window[(match_offset + i) as usize % WINDOW_SIZE];
+                for i in 0..mch_len {
+                    let byte = self.win[(mch_off + i) as usize % WIN_SIZE];
                     self.file_out.write_byte(byte);
-                    window_bytes[i as usize] = byte;
+                    win_bytes[i as usize] = byte;
                 }
 
                 // Slide window forward
-                for i in 0..match_len {
-                    self.window[self.p % WINDOW_SIZE] = window_bytes[i as usize];
+                for i in 0..mch_len {
+                    self.win[self.p % WIN_SIZE] = win_bytes[i as usize];
                     self.p += 1;
                 }
                 if self.inc_code_pos() == 1 { break; }
             }
 
-            match_len = 1;                      // Reset variables
-            for i in 0..window_bytes.len() {    //
-                window_bytes[i] = 0;            //
-            }                                   //
+            mch_len = 1;                  // Reset variables
+            for i in 0..win_bytes.len() { //
+                win_bytes[i] = 0;         //
+            }                             //
         }
         self.file_out.flush_buffer();
     }
@@ -263,8 +265,8 @@ impl Lz77 {
 fn main() {
     let start_time = Instant::now();
     let args: Vec<String> = env::args().collect();
-    let mut file_in = new_input_file(BUFFER_SIZE, &args[2]);
-    let file_out = new_output_file(BUFFER_SIZE, &args[3]);
+    let mut file_in = new_input_file(4096, &args[2]);
+    let file_out = new_output_file(4096, &args[3]);
     file_in.fill_buffer();
 
     match (&args[1]).as_str() {
@@ -274,7 +276,8 @@ fn main() {
             let file_in_size  = metadata(Path::new(&args[2])).unwrap().len();
             let file_out_size = metadata(Path::new(&args[3])).unwrap().len();
             println!("Finished Compressing");
-            println!("{} bytes -> {} bytes in {:.2?}", file_in_size, file_out_size, start_time.elapsed());
+            println!("{} bytes -> {} bytes in {:.2?}", 
+                file_in_size, file_out_size, start_time.elapsed());
         }
         "d" => { 
             let mut lz77 = Lz77::new(file_in, file_out);
@@ -282,7 +285,8 @@ fn main() {
             let file_in_size  = metadata(Path::new(&args[2])).unwrap().len();
             let file_out_size = metadata(Path::new(&args[3])).unwrap().len();
             println!("Finished Decompressing");
-            println!("{} bytes -> {} bytes in {:.2?}", file_in_size, file_out_size, start_time.elapsed());
+            println!("{} bytes -> {} bytes in {:.2?}", 
+                file_in_size, file_out_size, start_time.elapsed());
         }
         _ => { 
             println!("To compress: c input output.");
